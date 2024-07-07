@@ -1,0 +1,207 @@
+Migration From BC14 to BC240
+
+
+Open Development Shell 
+Import-Module 'C:\Program Files (x86)\Microsoft Dynamics 365 Business Central\140\RoleTailored Client\NavModelTools.ps1'
+Import-Module 'C:\Program Files\Microsoft Dynamics 365 Business Central\140\Service\NavAdminTool.ps1'
+
+Import-License
+Import-NAVServerLicense -LicenseFile "D:\4805044 - BC 14.flf" -ServerInstance BC140 -Tenant default
+Restart-NAVServerInstance -ServerInstance BC140
+
+/For Export all BC14 tables objects into txt FILE:
+Export-NAVApplicationObject -DatabaseServer localhost\BCDEMO14 -DatabaseName "Demo Database BC (14-0)" -ExportToNewSyntax -Path "D:\Migration Task\BC14TablesOnly\BC14TablesOnly.txt" -Filter 'Type=Table;Id=1..1999999999'
+
+CAL to al cmd 
+cd C:\Program Files (x86)\Microsoft Dynamics 365 Business Central\140\RoleTailored Client
+txt2al --source="D:\Migration Task\BC14TablesOnly" --target="D:\Migration Task\BC14TablesOnly\al" --tableDataOnly
+
+
+After exported tables create new app bc14baseapptableonly and paste all table wihout root folder with app.json without id , application and etc property check below link for more details
+https://learn.microsoft.com/en-us/dynamics365/business-central/dev-itpro/upgrade/upgrade-to-microsoft-base-app-v23
+
+
+
+Create same bc14baseapptableonly with v2 and delete all table and create migration.json
+and don't delete these tables table 7330 "Bin Content Buffer",table 265 "Document Entry",table 338 "Entry Summary",table 1670 "Option Lookup Buffer"
+
+
+
+
+ISE cmd
+########################################################################
+#Author : Lokesh Sharma
+#Date   : 12-07-2023
+#Purpose: Execute Step 1 of BC14 to BC22 Upgrade
+#Steps  : 
+#1. Replace $ServerInstance Parameter Below with your BC14 Server Instance Name (Service Name).
+########################################################################
+
+
+
+#Import Module
+Import-Module 'C:\Program Files\Microsoft Dynamics 365 Business Central\140\Service\NavAdminTool.ps1'
+$ServerInstance = "BC140"
+
+#Uninstall Extensions from BC 14
+Get-NAVAppInfo -ServerInstance $ServerInstance -Tenant default | % { Uninstall-NAVApp -ServerInstance $ServerInstance -Tenant default -Name $_.Name -Version $_.Version -Force}
+
+#Unpublish Extensions from BC 14
+Get-NAVAppInfo -ServerInstance $ServerInstance | % { Unpublish-NAVApp -ServerInstance $ServerInstance -Name $_.Name -Version $_.Version }
+
+#Remove Symbols
+Get-NAVAppInfo -ServerInstance $ServerInstance -SymbolsOnly | % { Unpublish-NAVApp -ServerInstance $ServerInstance -Name $_.Name -Version $_.Version }
+
+#Stop Service
+Stop-NAVServerInstance -ServerInstance $ServerInstance
+
+
+Execute this cmd in Sql Server Management Studio
+UPDATE [master].[dbo].[$ndo$srvproperty] SET [license] = null
+UPDATE [Demo Database BC (14-0)].[dbo].[$ndo$dbproperty] SET [license] = null
+UPDATE [Demo Database BC (14-0)].[dbo].[$ndo$tenantproperty] SET [license] = null
+
+
+#Convert Version 14 Database
+{
+
+Second file
+########################################################################
+#Author : Lokesh Sharma
+#Date   : 12-07-2023
+#Purpose: Execute Step 2 of BC14 to BC22 Upgrade
+########################################################################
+
+#Import Module
+Import-Module 'C:\Program Files\Microsoft Dynamics 365 Business Central\230\Service\NavAdminTool.ps1'
+
+#Convert the application database to version 23
+#Error :this error will come before execute cmd so first increase scale level for database to highest and then try this cmd
+SQL Server: Execution Timeout Expired. The timeout period elapsed prior to completion of the operation or the server is not responding. The statement has been terminated.
+
+#Before run this cmd reopen ISE:
+Invoke-NAVApplicationDatabaseConversion -DatabaseServer localhost\BCDEMO14 -DatabaseName "Demo Database BC (14-0)"
+
+#Configure version 23 server for DestinationAppsForMigration
+Set-NAVServerConfiguration -ServerInstance BC230 -KeyName DatabaseServer -KeyValue localhost
+Set-NAVServerConfiguration -ServerInstance BC230 -KeyName DatabaseInstance -KeyValue "BCDEMO14"
+Set-NAVServerConfiguration -ServerInstance BC230 -KeyName DatabaseName -KeyValue "Demo Database BC (14-0)"
+Set-NAVServerConfiguration -ServerInstance BC230 -KeyName "DestinationAppsForMigration" -KeyValue '[{"appId":"bf8e8ac8-a598-453c-ad88-57b576b1a758", "name":"bc14baseapptablesonly", "publisher": "Lokesh" , "version":"1.0.0.0"}]'
+Set-NavServerConfiguration -ServerInstance BC230 -KeyName "EnableTaskScheduler" -KeyValue false
+Restart-NAVServerInstance -ServerInstance BC230
+
+Import-NAVServerLicense -ServerInstance BC230 -LicenseFile "D:\4805044 - BC 23.bclicense"
+Restart-NAVServerInstance -ServerInstance BC230
+
+
+#Publish extensions
+Publish-NAVApp -ServerInstance BC230 -Path "D:\Migration Task\Tables Only App\Lokesh_bc14baseapptablesonly_1.0.0.0.app" -SkipVerification
+Publish-NAVApp -ServerInstance BC230 -Path "D:\Migration Task\Empty Apps\Microsoft_System Application_14.0.0.0.app" -SkipVerification
+Publish-NAVApp -ServerInstance BC230 -Path "D:\Migration Task\Empty Apps\Microsoft_Base Application_14.0.0.0.app" -SkipVerification
+Publish-NAVApp -ServerInstance BC230 -Path "D:\Migration Task\Empty Apps\Lokesh_Demo Customizations_14.0.0.0.app" -SkipVerification
+
+#Restart service
+Restart-NAVServerInstance -ServerInstance BC230
+
+#Synchronize tenant
+Sync-NAVTenant -ServerInstance BC230 -Tenant default -Mode Sync
+
+#Synchronize Apps  
+Sync-NAVApp -ServerInstance BC230 -Tenant default -Name "bc14baseapptablesonly" -Version 1.0.0.0
+Sync-NAVApp -ServerInstance BC230 -Tenant default -Name "System Application" -Version 14.0.0.0
+Sync-NAVApp -ServerInstance BC230 -Tenant default -Name "Base Application" -Version 14.0.0.0
+Sync-NAVApp -ServerInstance BC230 -Tenant default -Name "Demo Customizations" -Version 14.0.0.0
+
+#Upgrade data #install DestinationAppsForMigration And move tables
+Start-NAVDataUpgrade -ServerInstance BC230 -Tenant default -FunctionExecutionMode Serial -SkipAppVersionCheck
+Get-NavDataUpgrade -ServerInstance BC230 -Tenant default -Progress
+
+#Install Empty Apps
+Install-NAVApp -ServerInstance BC230 -Tenant default -Name "System Application" -Version 14.0.0.0
+Install-NAVApp -ServerInstance BC230 -Tenant default -Name "Base Application" -Version 14.0.0.0
+Install-NAVApp -ServerInstance BC230 -Tenant default -Name "Demo Customizations" -Version 14.0.0.0
+
+#Publish Final Extensions 
+Publish-NAVApp -ServerInstance BC230 -Path "D:\Migration Task\Tables Only App\Lokesh_bc14baseapptablesonly_2.0.0.0.app" -SkipVerification
+Publish-NAVApp -ServerInstance BC230 -Path "D:\Migration Task\BC Apps\Microsoft_System Application.app"
+Publish-NAVApp -ServerInstance BC230 -Path "D:\Migration Task\BC Apps\Microsoft_Base Application.app"
+Publish-NAVApp -ServerInstance BC230 -Path "D:\Migration Task\BC Apps\Microsoft_Application.app"
+Publish-NAVApp -ServerInstance BC230 -Path "D:\Migration Task\Demo Customization\Lokesh_Demo Customization_23.0.0.0.app" -SkipVerification
+
+
+#Synchronize Apps  
+Sync-NAVApp -ServerInstance BC230 -Tenant default -Name "System Application" -Version 23.4.15643.15715
+Sync-NAVApp -ServerInstance BC230 -Tenant default -Name "Base Application" -Version 23.4.15643.15715
+Sync-NAVApp -ServerInstance BC230 -Tenant default -Name "Application" -Version 23.4.15643.15715
+Sync-NAVApp -ServerInstance BC230 -Tenant default -Name "Demo Customization" -Version 23.0.0.0
+Sync-NAVApp -ServerInstance BC230 -Tenant default -Name "bc14baseapptablesonly" -Version 2.0.0.0
+
+
+
+
+#Upgrade Apps / Extension
+Start-NAVAppDataUpgrade -ServerInstance BC230 -Name "bc14baseapptablesonly" -Version 2.0.0.0
+
+
+#Upgrade Apps / Extension
+Uninstall-NAVApp -ServerInstance BC230 -Tenant default -Name "bc14baseapptablesonly" -Version 2.0.0.0
+Sync-NAVApp -ServerInstance BC230 -Tenant default -Name "bc14baseapptablesonly" -Version 2.0.0.0 -Mode Clean
+
+
+#Publish-NAVApp -ServerInstance BC230 -Name bc14baseapptablesonly -Version 1.0.0.0
+#Publish-NAVApp -ServerInstance BC230 -Name bc14baseapptablesonly -Version 2.0.0.0
+
+#Upgrade Actual Extensions
+Start-NAVAppDataUpgrade -ServerInstance BC230 -Tenant default -Name "System Application" -Version 23.4.15643.15715
+Start-NAVAppDataUpgrade -ServerInstance BC230 -Tenant default -Name "Base Application" -Version 23.4.15643.15715
+Install-NAVApp -ServerInstance BC230 -Tenant default -Name "Application" -Version 23.4.15643.15715
+Start-NAVAppDataUpgrade -ServerInstance BC230 -Tenant default -Name "Demo Customization" -Version 23.0.0.0
+
+
+#Task 20 :Change Application Version
+Set-NAVApplication -ServerInstance BC230 -ApplicationVersion 23.4.15643.15715 -Force
+Sync-NAVTenant -ServerInstance BC230 -MODE Sync -Tenant default
+Start-NAVDataUpgrade -ServerInstance BC230 -FunctionExecutionMode Serial -Tenant default -SkipUserSessionCheck
+Get-NAVDataUpgrade -ServerInstance BC230 -Tenant default -Progress
+Set-NAVServerConfiguration -ServerInstance BC230 -KeyName SolutionVersionExtension -KeyValue "437dbf0e-84ff-417a-965d-ed2bb9650972" -ApplyTo All  
+
+
+#Remove Empty Extension
+Uninstall-NAVApp -ServerInstance BC230 -Tenant default -Name "bc14baseapptablesonly" -Version 1.0.0.0
+Uninstall-NAVApp -ServerInstance BC230 -Tenant default -Name "System Application" -Version 14.0.0.0
+Uninstall-NAVApp -ServerInstance BC230 -Tenant default -Name "Base Application" -Version 14.0.0.0
+Uninstall-NAVApp -ServerInstance BC230 -Tenant default -Name "Demo Customization" -Version 14.0.0.0
+
+
+Sync-NAVApp -ServerInstance BC230 -Tenant default -Mode Clean -Name "bc14baseapptablesonly" -Version 1.0.0.0
+Sync-NAVApp -ServerInstance BC230 -Tenant default -Mode Clean -Name "bc14baseapptablesonly" -Version 2.0.0.0
+
+#this is not run because may be already unpublished
+UnPublish-NAVApp -ServerInstance BC230 -Name "bc14baseapptablesonly" -Version 1.0.0.0
+UnPublish-NAVApp -ServerInstance BC230 -Name "bc14baseapptablesonly" -Version 2.0.0.0
+UnPublish-NAVApp -ServerInstance BC230 -Name "System Application" -Version 14.0.0.0
+UnPublish-NAVApp -ServerInstance BC230 -Name "Base Application" -Version 14.0.0.0
+UnPublish-NAVApp -ServerInstance BC230 -Name "Demo Customizations" -Version 14.0.0.0
+
+#Upgrade Apps / Extension
+Start-NAVAppDataUpgrade -ServerInstance BC230 -Name "bc14baseapptablesonly" -Version 2.0.0.0
+
+#Upgrade control add-ins
+$AddinsFolder = 'C:\Program Files\Microsoft Dynamics 365 Business Central\220\Service\Add-ins'
+
+#Change application version
+Set-NAVApplication -ServerInstance BC230 -ApplicationVersion 22.0.54157.55195 -Force
+Sync-NAVTenant -ServerInstance BC230 -Mode Sync -Tenant default
+Start-NAVDataUpgrade -ServerInstance BC230 -FunctionExecutionMode Serial -Tenant default -SkipUserSessionCheck
+Set-NAVServerConfiguration -ServerInstance BC230 -KeyName SolutionVersionExtension -KeyValue "437dbf0e-84ff-417a-965d-ed2bb9650972" -ApplyTo All  
+
+}
+'
+
+
+datbase backup "C:\Program Files\Microsoft SQL Server\MSSQL15.BCDEMO14\MSSQL\Backup"
+
+
+
+
+

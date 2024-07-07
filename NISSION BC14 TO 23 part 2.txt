@@ -1,0 +1,66 @@
+NISSINCBUAT BC14 TO BC23 MIGRATION PART 2
+
+
+Import-Module 'C:\Program Files\Microsoft Dynamics 365 Business Central\230\Service\NavAdminTool.ps1'
+Sync-NAVTenant -ServerInstance BC140 -Tenant default -Mode Sync
+
+$ServerInstance = "BC140"
+
+#Uninstall Extensions from BC 14
+Get-NAVAppInfo -ServerInstance $ServerInstance -Tenant default | % { Uninstall-NAVApp -ServerInstance $ServerInstance -Tenant default -Name $_.Name -Version $_.Version -Force}
+
+#Unpublish Extensions from BC 14
+Get-NAVAppInfo -ServerInstance $ServerInstance | % { Unpublish-NAVApp -ServerInstance $ServerInstance -Name $_.Name -Version $_.Version }
+
+#Remove Symbols
+Get-NAVAppInfo -ServerInstance $ServerInstance -SymbolsOnly | % { Unpublish-NAVApp -ServerInstance $ServerInstance -Name $_.Name -Version $_.Version }
+
+#Stop Service
+Stop-NAVServerInstance -ServerInstance $ServerInstance
+
+Execute this cmd in Sql Server Management Studio
+UPDATE [master].[dbo].[$ndo$srvproperty] SET [license] = null
+UPDATE [NISSINBCUAT)].[dbo].[$ndo$dbproperty] SET [license] = null
+UPDATE [NISSINBCUAT)].[dbo].[$ndo$tenantproperty] SET [license] = null
+
+
+
+
+Sencord step after reOpen ISE:
+Import-Module 'C:\Program Files\Microsoft Dynamics 365 Business Central\230\Service\NavAdminTool.ps1'
+
+#Before run this cmd reopen ISE:
+Invoke-NAVApplicationDatabaseConversion -DatabaseServer localhost\BCDEMO14 -DatabaseName "NISSINBCUAT"
+
+
+#Configure version 23 server for DestinationAppsForMigration
+Set-NAVServerConfiguration -ServerInstance BC230 -KeyName DatabaseServer -KeyValue localhost
+Set-NAVServerConfiguration -ServerInstance BC230 -KeyName DatabaseInstance -KeyValue "BCDEMO14"
+Set-NAVServerConfiguration -ServerInstance BC230 -KeyName DatabaseName -KeyValue "NISSINBCUAT"
+Set-NAVServerConfiguration -ServerInstance BC230 -KeyName "DestinationAppsForMigration" -KeyValue '[{"appId":"df107615-6e4c-4f3f-8950-effbc6e9fd30", "name":"bc14baseapptablesonly", "publisher": "TECTURA" , "version":"1.0.0.0"}]'
+Set-NavServerConfiguration -ServerInstance BC230 -KeyName "EnableTaskScheduler" -KeyValue false
+Restart-NAVServerInstance -ServerInstance BC230
+
+Import-NAVServerLicense -ServerInstance BC230 -LicenseFile "D:\4805044 - BC 23.bclicense"
+Restart-NAVServerInstance -ServerInstance BC230
+
+#Publish extensions
+Publish-NAVApp -ServerInstance BC230 -Path "D:\Migration Task\NISSION TASK\BC14Tablesonlyrar\TECTURA_bc14baseapptablesonly_1.0.0.0.app" -SkipVerification
+Publish-NAVApp -ServerInstance BC230 -Path "D:\Migration Task\Empty Apps\Microsoft_System Application_14.0.0.0.app" -SkipVerification
+Publish-NAVApp -ServerInstance BC230 -Path "D:\Migration Task\Empty Apps\Microsoft_Base Application_14.0.0.0.app" -SkipVerification
+Publish-NAVApp -ServerInstance BC230 -Path "D:\Migration Task\NISSION TASK\Tectura_Custom_0.0.0.1.app" -SkipVerification
+
+
+#Restart service
+Restart-NAVServerInstance -ServerInstance BC230
+
+#Synchronize tenant
+
+
+#Synchronize Apps  
+Sync-NAVTenant -ServerInstance BC230 -Tenant default -Mode Sync
+Sync-NAVApp -ServerInstance BC230 -Tenant default -Name "bc14baseapptablesonly" -Version 1.0.0.0
+Sync-NAVApp -ServerInstance BC230 -Tenant default -Name "System Application" -Version 14.0.0.0
+Sync-NAVApp -ServerInstance BC230 -Tenant default -Name "Base Application" -Version 14.0.0.0
+Sync-NAVApp -ServerInstance BC230 -Tenant default -Name "Demo Customizations" -Version 14.0.0.0
+
