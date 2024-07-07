@@ -1,0 +1,8 @@
+Project: ALF Export Setup Tabs to Excel
+C:\Users\alexef\Documents\ALF Export Setup Tabs to Excel\AL\ALF Export Setup Tabs to Excel
+
+cd C:\Program Files (x86)\Microsoft Dynamics NAV\110\RoleTailored Client
+
+finsql.exe Command=ExportToNewSyntax, File="C:\Users\alexef\Documents\ALF Export Setup Tabs to Excel\Convert_Objects\Objects_on-prem_NewSyntax_NEW\ALF Export Setup Tabs to Excel.txt", Database="Demo Database NAV (11-0)", ServerName="RU-ALEXEF07\NAV2018", Filter=Type=report;ID=50126
+
+txt2al.exe --source="C:\Users\alexef\Documents\ALF Export Setup Tabs to Excel\Convert_Objects\Objects_on-prem_NewSyntax_NEW" --target="C:\Users\alexef\Documents\ALF Export Setup Tabs to Excel\Convert_Objects\Objects_AL" --rename --type=Report --extensionStartId=70050126
